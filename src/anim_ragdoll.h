@@ -9,7 +9,8 @@ using namespace physx;
 struct Ragdoll
 {
     std::vector<PxRigidDynamic*> m_rigid_bodies;
-    std::vector<glm::mat4>       m_body_to_joint_transform;
+    std::vector<glm::vec3>       m_relative_joint_pos;
+    std::vector<glm::quat>       m_original_body_rotations;
 
     PxRigidDynamic* find_recent_body(uint32_t idx, Skeleton* skeleton, uint32_t& chosen_idx);
 };

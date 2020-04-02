@@ -140,8 +140,6 @@ protected:
         if (m_visualize_bones)
             visualize_bones(m_skeletal_mesh->skeleton());
 
-        render_skeleton_with_offsets();
-
         if (m_physx_debug_draw)
             render_physx_debug();
 
@@ -150,45 +148,6 @@ protected:
     }
 
     // -----------------------------------------------------------------------------------------------------------------------------------
-
-    void render_skeleton_with_offsets()
-    {
-        Joint* joints = m_skeletal_mesh->skeleton()->joints();
-
-        for (int i = 0; i < m_skeletal_mesh->skeleton()->num_bones(); i++)
-        {
-            //if (joints[i].parent_index == -1)
-            //    m_joint_mat[i] = joints[i].offset_from_parent;
-            //else
-            //    m_joint_mat[i] = m_joint_mat[joints[i].parent_index] * joints[i].offset_from_parent;
-
-            glm::mat4 model = m_character_transforms.model * m_joint_mat[i];
-
-            uint32_t        chosen_idx;
-            PxRigidDynamic* body = m_ragdoll.find_recent_body(i, m_skeletal_mesh->skeleton(), chosen_idx);
-
-            glm::mat4 a = to_mat4(body->getGlobalPose());
-            glm::mat4 b = glm::inverse(joints[i].inverse_bind_pose);
-
-            glm::vec3 a_pos = glm::vec3(a[3][0], a[3][1], a[3][2]);
-            glm::vec3 b_pos = glm::vec3(b[3][0], b[3][1], b[3][2]);
-
-            glm::mat4 delta     = create_offset_transform(a, b);
-            glm::vec3 delta_pos = glm::vec3(delta[3][0], delta[3][1], delta[3][2]);
-
-            //if (i == 0)
-            model = a * m_ragdoll.m_body_to_joint_transform[i];
-            //else
-            //model = to_mat4(body->getGlobalPose()) * m_ragdoll.m_body_to_joint_transform[i];
-
-            glm::vec3 pos = glm::vec3(model[3][0], model[3][1], model[3][2]);
-            glm::vec3 diff = pos - b_pos;
-
-            //std::cout << "Name = " << joints[i].name << ", Diff = { " << diff.x << ", " << diff.y << ", " << diff.z << std::endl;
-
-            m_debug_draw.sphere(1.5f, pos, glm::vec3(1.0f, 0.0f, 1.0f));
-        }
-    }
 
     void shutdown() override
     {
@@ -297,7 +256,7 @@ private:
 
         m_material = m_physics->createMaterial(0.5f, 0.5f, 0.6f);
 
-        PxRigidStatic* ground_plane = PxCreatePlane(*m_physics, PxPlane(0, 1, 0, 0), *m_material);
+        PxRigidStatic* ground_plane = PxCreatePlane(*m_physics, PxPlane(0, 1, 0, 20.0f), *m_material);
         m_scene->addActor(*ground_plane);
 
         m_scene->setVisualizationParameter(PxVisualizationParameter::eSCALE, 1.0f);
@@ -369,7 +328,8 @@ private:
         uint32_t j_middle_01_r_idx = m_skeletal_mesh->skeleton()->find_joint_index("RightHandMiddle1");
 
         m_ragdoll.m_rigid_bodies.resize(m_skeletal_mesh->skeleton()->num_bones());
-        m_ragdoll.m_body_to_joint_transform.resize(m_skeletal_mesh->skeleton()->num_bones());
+        m_ragdoll.m_relative_joint_pos.resize(m_skeletal_mesh->skeleton()->num_bones());
+        m_ragdoll.m_original_body_rotations.resize(m_skeletal_mesh->skeleton()->num_bones());
 
         for (int i = 0; i < m_skeletal_mesh->skeleton()->num_bones(); i++)
             m_ragdoll.m_rigid_bodies[i] = nullptr;
@@ -383,7 +343,7 @@ private:
         rot           = glm::rotate(rot, PxHalfPi, glm::vec3(0.0f, 0.0f, 1.0f));
 
         PxRigidDynamic* pelvis = create_capsule_bone(j_pelvis_idx, j_neck_01_idx, m_ragdoll, 15.0f * m_scale, rot);
-        PxRigidDynamic* head   = create_sphere_bone(j_head_idx, m_ragdoll, 10.0f * m_scale);
+        PxRigidDynamic* head   = create_capsule_bone(j_head_idx, m_ragdoll, glm::vec3(0.0f, 9.0f * m_scale, 0.0f), 4.0f * m_scale, 6.0f * m_scale, rot);
 
         PxRigidDynamic* l_leg = create_capsule_bone(j_thigh_l_idx, j_calf_l_idx, m_ragdoll, r, rot);
         PxRigidDynamic* r_leg = create_capsule_bone(j_thigh_r_idx, j_calf_r_idx, m_ragdoll, r, rot);
@@ -400,26 +360,24 @@ private:
         PxRigidDynamic* l_hand = create_sphere_bone(j_middle_01_l_idx, m_ragdoll, r);
         PxRigidDynamic* r_hand = create_sphere_bone(j_middle_01_r_idx, m_ragdoll, r);
 
-        PxRigidDynamic* l_foot = create_capsule_bone(j_foot_l_idx, j_ball_l_idx, m_ragdoll, r);
-        PxRigidDynamic* r_foot = create_capsule_bone(j_foot_r_idx, j_ball_r_idx, m_ragdoll, r);
+        rot = glm::mat4(1.0f);
+        rot = glm::rotate(rot, PxHalfPi, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        PxRigidDynamic* l_foot = create_capsule_bone(j_foot_l_idx, j_ball_l_idx, m_ragdoll, r, rot);
+        PxRigidDynamic* r_foot = create_capsule_bone(j_foot_r_idx, j_ball_r_idx, m_ragdoll, r, rot);
 
         for (int i = 0; i < m_skeletal_mesh->skeleton()->num_bones(); i++)
         {
             uint32_t        chosen_idx;
             PxRigidDynamic* body = m_ragdoll.find_recent_body(i, m_skeletal_mesh->skeleton(), chosen_idx);
 
-            glm::mat4 a = to_mat4(body->getGlobalPose());
-            glm::mat4 b = glm::inverse(joints[i].inverse_bind_pose);
+            glm::mat4 global_transform     = to_mat4(body->getGlobalPose());
+            glm::mat4 inv_global_transform = glm::inverse(global_transform);
+            glm::mat4 bind_pose            = glm::inverse(joints[i].inverse_bind_pose);
 
-            glm::vec3 a_pos = glm::vec3(a[3][0], a[3][1], a[3][2]);
-            glm::vec3 b_pos = glm::vec3(b[3][0], b[3][1], b[3][2]);
-
-            glm::mat4 delta = create_offset_transform(a, b);
-            glm::vec3 delta_pos = glm::vec3(delta[3][0], delta[3][1], delta[3][2]);
-
-            m_ragdoll.m_body_to_joint_transform[i] = delta;
-
-            std::cout << "Current = " << joints[i].name << ", RB = " << joints[chosen_idx].name << std::endl;
+            glm::vec4 p                       = inv_global_transform * glm::vec4(bind_pose[3][0], bind_pose[3][1], bind_pose[3][2], 1.0f);
+            m_ragdoll.m_relative_joint_pos[i] = glm::vec3(p.x, p.y, p.z);
+            m_ragdoll.m_original_body_rotations[i] = glm::quat_cast(global_transform);
         }
 
         // ---------------------------------------------------------------------------------------------------------------
@@ -462,8 +420,8 @@ private:
         create_d6_joint(pelvis, r_leg, j_thigh_r_idx);
 
         // Thighs to Calf
-        create_d6_joint(l_leg, l_calf, j_calf_l_idx);
-        create_d6_joint(r_leg, r_calf, j_calf_r_idx);
+        create_revolute_joint(l_leg, l_calf, j_calf_l_idx);
+        create_revolute_joint(r_leg, r_calf, j_calf_r_idx);
 
         // Calf to Foot
         create_d6_joint(l_calf, l_foot, j_foot_l_idx);
@@ -491,9 +449,17 @@ private:
         glm::vec3 parent_pos = joints[parent_idx].bind_pos_ws(m_model);
         glm::vec3 child_pos  = joints[child_idx].bind_pos_ws(m_model);
 
+        float     len      = glm::length(parent_pos - child_pos);
+
+        // shorten by 0.1 times to prevent overlap
+        len -= len * 0.1f;
+
+        float len_minus_2r = len - 2.0f * r;
+        float     half_height  = len_minus_2r / 2.0f;
+
         glm::vec3 body_pos = (parent_pos + child_pos) / 2.0f;
 
-        PxShape* shape = m_physics->createShape(PxCapsuleGeometry(r, (glm::length(parent_pos - child_pos) - r - r / 2.0f) / 2.0f), *m_material);
+        PxShape* shape = m_physics->createShape(PxCapsuleGeometry(r, half_height), *m_material);
 
         glm::mat4 inv_bind_pose = glm::mat4(glm::mat3(joints[parent_idx].inverse_bind_pose));
         glm::mat4 bind_pose     = glm::inverse(inv_bind_pose);
@@ -502,6 +468,36 @@ private:
         world_trm[3][0] = body_pos.x;
         world_trm[3][1] = body_pos.y;
         world_trm[3][2] = body_pos.z;
+
+        world_trm = world_trm * rotation;
+
+        PxRigidDynamic* body = m_physics->createRigidDynamic(PxTransform(to_mat44(world_trm)));
+        body->setMass(0.1f);
+
+        body->attachShape(*shape);
+
+        m_ragdoll.m_rigid_bodies[parent_idx] = body;
+
+        return body;
+    }
+
+    // -----------------------------------------------------------------------------------------------------------------------------------
+
+    PxRigidDynamic* create_capsule_bone(uint32_t parent_idx, Ragdoll& ragdoll, glm::vec3 offset, float l, float r = 0.5f, glm::mat4 rotation = glm::mat4(1.0f))
+    {
+        Joint* joints = m_skeletal_mesh->skeleton()->joints();
+
+        glm::vec3 parent_pos = joints[parent_idx].bind_pos_ws(m_model) + offset;
+      
+        PxShape* shape = m_physics->createShape(PxCapsuleGeometry(r, l), *m_material);
+
+        glm::mat4 inv_bind_pose = glm::mat4(glm::mat3(joints[parent_idx].inverse_bind_pose));
+        glm::mat4 bind_pose     = glm::inverse(inv_bind_pose);
+        glm::mat4 world_trm     = m_model_without_scale * bind_pose;
+
+        world_trm[3][0] = parent_pos.x;
+        world_trm[3][1] = parent_pos.y;
+        world_trm[3][2] = parent_pos.z;
 
         world_trm = world_trm * rotation;
 
@@ -548,6 +544,23 @@ private:
         joint->setConstraintFlag(PxConstraintFlag::eVISUALIZATION, true);
 
         config_d6_joint(3.14 / 4.f, 3.14f / 4.f, -3.14f / 8.f, 3.14f / 8.f, joint);
+    }
+
+    void create_revolute_joint(PxRigidDynamic* parent, PxRigidDynamic* child, uint32_t joint_pos)
+    {
+        Joint*    joints = m_skeletal_mesh->skeleton()->joints();
+        glm::vec3 p      = joints[joint_pos].bind_pos_ws(m_model);
+
+        PxRevoluteJoint* joint = PxRevoluteJointCreate(*m_physics,
+                                           parent,
+                                           parent->getGlobalPose().transformInv(PxTransform(to_vec3(p))),
+                                           child,
+                                           child->getGlobalPose().transformInv(PxTransform(to_vec3(p))));
+
+        joint->setConstraintFlag(PxConstraintFlag::eVISUALIZATION, true);
+
+        joint->setLimit(PxJointAngularLimitPair(PxPi, 0, 0.01f));
+        joint->setRevoluteJointFlag(PxRevoluteJointFlag::eLIMIT_ENABLED, true);
     }
 
     // -----------------------------------------------------------------------------------------------------------------------------------
@@ -676,7 +689,7 @@ private:
 
     bool load_mesh()
     {
-        m_skeletal_mesh = std::unique_ptr<SkeletalMesh>(SkeletalMesh::load("mesh/Idle_p.fbx"));
+        m_skeletal_mesh = std::unique_ptr<SkeletalMesh>(SkeletalMesh::load("mesh/paladin.fbx"));
 
         if (!m_skeletal_mesh)
         {
@@ -691,7 +704,7 @@ private:
 
     bool load_animations()
     {
-        m_walk_animation = std::unique_ptr<Animation>(Animation::load("mesh/Idle_p.fbx", m_skeletal_mesh->skeleton()));
+        m_walk_animation = std::unique_ptr<Animation>(Animation::load("mesh/paladin.fbx", m_skeletal_mesh->skeleton()));
 
         if (!m_walk_animation)
         {
@@ -789,7 +802,6 @@ private:
 
         // Update character transforms.
         m_character_transforms.model = glm::mat4(1.0f);
-        // m_character_transforms.model = glm::rotate(m_plane_transforms.model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
         m_model_without_scale        = m_character_transforms.model;
         m_model                      = glm::scale(m_character_transforms.model, glm::vec3(m_scale));
         m_character_transforms.model = m_model;

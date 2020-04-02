@@ -136,6 +136,7 @@ void Skeleton::build_skeleton(aiNode* node, int bone_index, const aiScene* scene
 
             joint.name              = bone_name;
             joint.inverse_bind_pose = glm::transpose(glm::make_mat4(&temp_bone_list[i]->mOffsetMatrix.a1));
+            joint.original_rotation = glm::quat_cast(glm::inverse(joint.inverse_bind_pose));
 
             aiNode* parent = node->mParent;
             int     index;

@@ -12,9 +12,10 @@ struct Joint
     std::string name;
     glm::mat4   inverse_bind_pose;
     glm::mat4   offset_from_parent;
+    glm::quat   original_rotation;
     int32_t     parent_index;
 
-    glm::vec3 bind_pos_ws(glm::mat4 model)
+    inline glm::vec3 bind_pos_ws(glm::mat4 model)
     {
         glm::mat4 m = model * glm::inverse(inverse_bind_pose);
         return glm::vec3(m[3][0], m[3][1], m[3][2]);
