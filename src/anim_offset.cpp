@@ -15,10 +15,10 @@ PoseTransforms* AnimOffset::offset(PoseTransforms* transforms)
 
     for (uint32_t i = 0; i < m_skeleton->num_bones(); i++)
     {
-        m_transforms.transforms[i] = glm::mat4(1.0f);
-        transforms->transforms[i]  = glm::inverse(joints[i].offset_transform);
+        m_transforms.transforms[i] = transforms->transforms[i] * joints[i].inverse_bind_pose; 
+        //transforms->transforms[i]  = glm::inverse(joints[i].inverse_bind_pose);
     }
-    //(transforms->transforms[i] * joints[i].offset_transform);
+    //;
 
     return &m_transforms;
 }
