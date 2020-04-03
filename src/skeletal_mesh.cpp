@@ -9,7 +9,8 @@ SkeletalMesh* SkeletalMesh::load(const std::string& name, Skeleton* skeleton)
 {
 	const aiScene* scene;
 	Assimp::Importer importer;
-	scene = importer.ReadFile(name, aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_FlipUVs);
+	importer.SetPropertyFloat(AI_CONFIG_GLOBAL_SCALE_FACTOR_KEY, 0.1f);
+	scene = importer.ReadFile(name, aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_FlipUVs | aiProcess_GlobalScale);
 
 	if (!scene)
 	{

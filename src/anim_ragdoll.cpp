@@ -54,7 +54,7 @@ PoseTransforms* AnimRagdoll::apply(Ragdoll* ragdoll, glm::mat4 model)
             glm::quat final_rotation = joints[i].original_rotation * diff_rot;
             glm::mat4 rotation       = glm::mat4_cast(final_rotation);
 
-            m_transforms.transforms[i] = translation * rotation;
+            m_transforms.transforms[i] = glm::inverse(model) * translation * rotation * model;
         }
     }
 

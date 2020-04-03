@@ -14,7 +14,7 @@ PoseTransforms* AnimOffset::offset(PoseTransforms* transforms)
     Joint* joints = m_skeleton->joints();
 
     for (uint32_t i = 0; i < m_skeleton->num_bones(); i++)
-        m_transforms.transforms[i] = transforms->transforms[i] * joints[i].inverse_bind_pose; 
+        m_transforms.transforms[i] = transforms->transforms[i] * joints[i].inverse_bind_pose;
 
     return &m_transforms;
 }
