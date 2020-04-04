@@ -29,13 +29,54 @@ struct GlobalUniforms
     glm::mat4 projection;
 };
 
-struct BoneVertex
-{
-    glm::vec3 position;
-    glm::vec3 normal;
+#define CAMERA_FAR_PLANE 10000.0f
+
+const std::string kJointNames[] = {
+    "Pelvis",
+    "Middle Spine",
+    "Neck",
+    "Head",
+    "Left Upper Leg",
+    "Left Knee",
+    "Left Ankle",
+    "Left Foot",
+    "Right Upper Leg",
+    "Right Knee",
+    "Right Angle",
+    "Right Foot",
+    "Left Upper Arm",
+    "Left Elbow",
+    "Left Lower Arm",
+    "Left Hand",
+    "Right Upper Arm",
+    "Right Elbow",
+    "Right Lower Arm",
+    "Right Hand"
 };
 
-#define CAMERA_FAR_PLANE 10000.0f
+struct RagdollDesc
+{
+    std::string pelvis;
+    std::string mid_spine;
+    std::string neck;
+    std::string head;
+    std::string left_upper_leg;
+    std::string left_knee;
+    std::string left_ankle;
+    std::string left_foot;
+    std::string right_upper_leg;
+    std::string right_knee;
+    std::string right_ankle;
+    std::string right_foot;
+    std::string left_upper_arm;
+    std::string left_elbow;
+    std::string left_lower_arm;
+    std::string left_hand;
+    std::string right_upper_arm;
+    std::string right_elbow;
+    std::string right_lower_arm;
+    std::string right_hand;
+};
 
 class AnimationStateMachine : public dw::Application
 {
@@ -44,6 +85,11 @@ protected:
 
     bool init(int argc, const char* argv[]) override
     {
+        m_selected_joints.resize(20);
+
+        for (int i = 0; i < 20; i++)
+            m_selected_joints[i] = 0;
+
         initialize_physics();
 
         // Create GPU resources.
@@ -56,6 +102,11 @@ protected:
         // Load mesh.
         if (!load_mesh())
             return false;
+
+        m_joint_names.push_back(" -");
+
+        for (int i = 0; i < m_skeletal_mesh->skeleton()->num_bones(); i++)
+            m_joint_names.push_back(m_skeletal_mesh->skeleton()->joints()[i].name);
 
         DW_LOG_INFO("Loaded Mesh!");
 
@@ -85,6 +136,8 @@ protected:
         m_scene->simulate(1.0f / 60.0f);
         m_scene->fetchResults(true);
 
+        m_ragdoll.set_kinematic(true);
+
         return true;
     }
 
@@ -92,12 +145,6 @@ protected:
 
     void update(double delta) override
     {
-        if (m_simulate)
-        {
-            m_scene->simulate(1.0f / 60.0f);
-            m_scene->fetchResults(true);
-        }
-
         // Debug GUI
         gui();
 
@@ -127,6 +174,9 @@ protected:
 
         // Update Skeleton
         update_animations();
+
+        m_scene->simulate(1.0f / 60.0f);
+        m_scene->fetchResults(true);
 
         // Render Mesh.
         if (m_visualize_mesh)
@@ -330,6 +380,8 @@ private:
         m_ragdoll.m_rigid_bodies.resize(m_skeletal_mesh->skeleton()->num_bones());
         m_ragdoll.m_relative_joint_pos.resize(m_skeletal_mesh->skeleton()->num_bones());
         m_ragdoll.m_original_body_rotations.resize(m_skeletal_mesh->skeleton()->num_bones());
+        m_ragdoll.m_body_pos_relative_to_joint.resize(m_skeletal_mesh->skeleton()->num_bones());
+        m_ragdoll.m_original_joint_rotations.resize(m_skeletal_mesh->skeleton()->num_bones());
 
         for (int i = 0; i < m_skeletal_mesh->skeleton()->num_bones(); i++)
             m_ragdoll.m_rigid_bodies[i] = nullptr;
@@ -379,6 +431,15 @@ private:
             glm::vec4 p                            = inv_global_transform * glm::vec4(world_pos, 1.0f); // glm::vec4(bind_pose[3][0], bind_pose[3][1], bind_pose[3][2], 1.0f);
             m_ragdoll.m_relative_joint_pos[i]      = glm::vec3(p.x, p.y, p.z);
             m_ragdoll.m_original_body_rotations[i] = glm::quat_cast(global_transform);
+
+            if (m_ragdoll.m_rigid_bodies[i])
+            {
+                // Rigid body position relative to the joint
+                p = joints[i].inverse_bind_pose * glm::vec4(to_vec3(m_ragdoll.m_rigid_bodies[i]->getGlobalPose().p), 1.0f);
+
+                m_ragdoll.m_body_pos_relative_to_joint[i] = glm::vec3(p.x, p.y, p.z);
+                m_ragdoll.m_original_joint_rotations[i]   = glm::quat_cast(bind_pose);
+            }
         }
 
         // ---------------------------------------------------------------------------------------------------------------
@@ -439,7 +500,7 @@ private:
         create_revolute_joint(l_arm, l_forearm, j_lowerarm_l_idx, arm_rot);
 
         arm_rot = glm::mat4(1.0f);
-        arm_rot           = glm::rotate(arm_rot, PxPi / 2.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+        arm_rot = glm::rotate(arm_rot, PxPi / 2.0f, glm::vec3(0.0f, 0.0f, 1.0f));
         create_revolute_joint(r_arm, r_forearm, j_lowerarm_r_idx, arm_rot);
 
         // Lowerman to Hand
@@ -468,6 +529,9 @@ private:
 
         PxShape* shape = m_physics->createShape(PxCapsuleGeometry(r, half_height), *m_material);
 
+        PxTransform local(to_quat(glm::quat_cast(rotation)));
+        shape->setLocalPose(local);
+
         glm::mat4 inv_bind_pose = glm::mat4(glm::mat3(joints[parent_idx].inverse_bind_pose));
         glm::mat4 bind_pose     = glm::inverse(inv_bind_pose);
 
@@ -477,13 +541,13 @@ private:
         m[3][1] = 0.0f;
         m[3][2] = 0.0f;
 
-        glm::mat4 world_trm     = m * bind_pose;
+        glm::mat4 world_trm = m * bind_pose;
 
         world_trm[3][0] = body_pos.x;
         world_trm[3][1] = body_pos.y;
         world_trm[3][2] = body_pos.z;
 
-        world_trm = world_trm * rotation;
+        world_trm = world_trm;
 
         PxRigidDynamic* body = m_physics->createRigidDynamic(PxTransform(to_mat44(world_trm)));
         body->setMass(m_mass);
@@ -505,6 +569,9 @@ private:
 
         PxShape* shape = m_physics->createShape(PxCapsuleGeometry(r, l), *m_material);
 
+        PxTransform local(to_quat(glm::quat_cast(rotation)));
+        shape->setLocalPose(local);
+
         glm::mat4 inv_bind_pose = glm::mat4(glm::mat3(joints[parent_idx].inverse_bind_pose));
         glm::mat4 bind_pose     = glm::inverse(inv_bind_pose);
 
@@ -514,13 +581,13 @@ private:
         m[3][1] = 0.0f;
         m[3][2] = 0.0f;
 
-        glm::mat4 world_trm     = m * bind_pose;
+        glm::mat4 world_trm = m * bind_pose;
 
         world_trm[3][0] = parent_pos.x;
         world_trm[3][1] = parent_pos.y;
         world_trm[3][2] = parent_pos.z;
 
-        world_trm = world_trm * rotation;
+        world_trm = world_trm;
 
         PxRigidDynamic* body = m_physics->createRigidDynamic(PxTransform(to_mat44(world_trm)));
 
@@ -829,9 +896,9 @@ private:
         m_plane_transforms.model = glm::mat4(1.0f);
 
         // Update character transforms.
-        m_model_without_scale = glm::mat4(1.0f);
+        m_model_without_scale        = glm::mat4(1.0f);
         m_model_without_scale        = glm::translate(m_model_without_scale, glm::vec3(0.0f, 0.0f, 0.0f));
-        m_model               = glm::scale(m_model_without_scale, glm::vec3(m_scale));
+        m_model                      = glm::scale(m_model_without_scale, glm::vec3(m_scale));
         m_character_transforms.model = m_model;
 
         m_model_only_scale = glm::mat4(1.0f);
@@ -890,12 +957,47 @@ private:
     {
         Pose* rifle_pose = m_walk_sampler->sample(m_delta_seconds);
 
-        PoseTransforms* global_transforms  = m_local_to_global->generate_transforms(rifle_pose);
-        PoseTransforms* ragdoll_transforms = m_ragdoll_pose->apply(&m_ragdoll, m_model_only_scale);
-        PoseTransforms* final_transforms   = m_offset->offset(ragdoll_transforms);
+        PoseTransforms* global_transforms = m_local_to_global->generate_transforms(rifle_pose);
+
+        if (!m_simulate)
+        {
+            for (int i = 0; i < m_ragdoll.m_rigid_bodies.size(); i++)
+            {
+                //Joint* joints = m_skeletal_mesh->skeleton()->joints();
+                //global_transforms->transforms[i] = glm::inverse(joints[i].inverse_bind_pose);
+
+                if (m_ragdoll.m_rigid_bodies[i])
+                {
+                    // World position of the rigid body
+                    glm::vec4 temp      = global_transforms->transforms[i] * glm::vec4(m_ragdoll.m_body_pos_relative_to_joint[i], 1.0f);
+                    glm::vec3 world_pos = glm::vec3(temp.x, temp.y, temp.z);
+
+                    // Find the difference between the current and original joint rotation.
+                    glm::quat joint_rot = glm::quat_cast(global_transforms->transforms[i]);
+                    glm::quat diff_rot  = joint_rot * glm::conjugate(m_ragdoll.m_original_joint_rotations[i]);
+
+                    // The apply the difference rotation to the original rigid body rotation to get the final rotation.
+                    glm::quat rotation = m_ragdoll.m_original_body_rotations[i] * diff_rot;
+
+                    //glm::mat4 translation = glm::mat4(1.0f);
+                    //translation           = glm::translate(translation, glm::vec3(world_pos.x, world_pos.y, world_pos.z));
+                    //glm::mat4 rotation       = glm::mat4_cast(final_rotation);
+
+                    //glm::mat4 transform = translation * rotation;
+
+                    PxTransform px_transform(to_vec3(world_pos), to_quat(rotation));
+
+                    m_ragdoll.m_rigid_bodies[i]->setGlobalPose(px_transform);
+                }
+            }
+        }
+        else
+            global_transforms = m_ragdoll_pose->apply(&m_ragdoll, m_model_only_scale);
+
+        PoseTransforms* final_transforms = m_offset->offset(global_transforms);
 
         update_bone_uniforms(final_transforms);
-        update_skeleton_debug(m_skeletal_mesh->skeleton(), ragdoll_transforms);
+        update_skeleton_debug(m_skeletal_mesh->skeleton(), global_transforms);
     }
 
     // -----------------------------------------------------------------------------------------------------------------------------------
@@ -962,8 +1064,44 @@ private:
         ImGui::Checkbox("Visualize Joints", &m_visualize_joints);
         ImGui::Checkbox("Visualize Bones", &m_visualize_bones);
         ImGui::Checkbox("Visualize Bone Axis", &m_visualize_axis);
-        ImGui::Checkbox("Simulate", &m_simulate);
+
+        if (ImGui::Checkbox("Simulate", &m_simulate))
+            m_ragdoll.set_kinematic(!m_simulate);
+
         ImGui::Checkbox("PhysX Debug Draw", &m_physx_debug_draw);
+
+        ImGui::Separator();
+
+        bool is_combo_open = false;
+
+        for (int i = 0; i < 20; i++)
+        {
+            if (ImGui::BeginCombo(kJointNames[i].c_str(), m_joint_names[m_selected_joints[i]].c_str()))
+            {
+                is_combo_open = true;
+
+                for (int j = 0; j < m_joint_names.size(); j++)
+                {
+                    bool is_selected = (j == m_selected_joints[i]);
+
+                    if (ImGui::Selectable(m_joint_names[j].c_str(), is_selected))
+                        m_selected_joints[i] = j;
+
+                    if (ImGui::IsItemHovered())
+                    {
+                        m_selected_node = j - 1;
+                        m_visualize_joints = true;
+                    }
+
+                    if (is_selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        }
+
+        if (!is_combo_open)
+            m_selected_node = -1;
 
         ImGui::Separator();
 
@@ -1068,10 +1206,10 @@ private:
     physx::PxMaterial*             m_material   = nullptr;
     glm::mat4                      m_model;
     glm::mat4                      m_model_without_scale = glm::mat4(1.0f);
-    glm::mat4                      m_model_only_scale = glm::mat4(1.0f);
-    float                          m_scale               = 0.1f;
+    glm::mat4                      m_model_only_scale    = glm::mat4(1.0f);
+    float                          m_scale               = 1.0f;
     float                          m_ui_scale            = m_scale;
-    float                          m_mass                = 10.0f;
+    float                          m_mass                = 0.0001f;
 
     // Mesh
     std::unique_ptr<SkeletalMesh>
@@ -1083,12 +1221,12 @@ private:
     float m_heading_speed      = 0.0f;
     float m_sideways_speed     = 0.0f;
     float m_camera_sensitivity = 0.05f;
-    float m_camera_speed       = 0.1f;
+    float m_camera_speed       = 1.1f;
 
     // GUI
     bool m_visualize_mesh   = true;
-    bool m_visualize_joints = false;
-    bool m_visualize_bones  = false;
+    bool m_visualize_joints = true;
+    bool m_visualize_bones  = true;
     bool m_visualize_axis   = false;
 
     // Camera orientation.
@@ -1100,13 +1238,17 @@ private:
     float   m_pitch_blend           = 0.0f;
     float   m_yaw_blend             = 0.0f;
     bool    m_simulate              = false;
-    bool    m_physx_debug_draw      = true;
+    bool    m_physx_debug_draw      = false;
+    bool    m_first                 = true;
     Ragdoll m_ragdoll;
 
     int32_t                               m_selected_node = -1;
     std::vector<glm::vec3>                m_joint_pos;
     std::vector<glm::mat4>                m_joint_mat;
     std::vector<std::pair<int32_t, bool>> m_index_stack;
+
+    std::vector<std::string> m_joint_names;
+    std::vector<int32_t>     m_selected_joints;
 };
 
 DW_DECLARE_MAIN(AnimationStateMachine)

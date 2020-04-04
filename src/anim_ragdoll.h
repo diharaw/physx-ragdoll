@@ -12,13 +12,31 @@ struct Ragdoll
     std::vector<glm::vec3>       m_relative_joint_pos;
     std::vector<glm::quat>       m_original_body_rotations;
 
+    std::vector<glm::vec3> m_body_pos_relative_to_joint;
+    std::vector<glm::quat> m_original_joint_rotations;
+
     PxRigidDynamic* find_recent_body(uint32_t idx, Skeleton* skeleton, uint32_t& chosen_idx);
+    void            set_kinematic(bool state);
 };
 
+inline PxQuat to_quat(const glm::quat& q)
+{
+    return PxQuat(q.x, q.y, q.z, q.w);
+}
+
+inline glm::quat to_quat(const PxQuat& q)
+{
+    return glm::quat(q.w, q.x, q.y, q.z);
+}
 
 inline PxVec3 to_vec3(const glm::vec3& vec3)
 {
     return PxVec3(vec3.x, vec3.y, vec3.z);
+}
+
+inline glm::vec3 to_vec3(const PxVec3& vec3)
+{
+    return glm::vec3(vec3.x, vec3.y, vec3.z);
 }
 
 inline PxMat44 to_mat44(const glm::mat4& mat)

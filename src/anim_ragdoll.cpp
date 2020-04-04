@@ -18,7 +18,22 @@ PxRigidDynamic* Ragdoll::find_recent_body(uint32_t idx, Skeleton* skeleton, uint
     return body;
 }
 
-glm::vec3 pos_from_transform(glm::mat4 m) {
+void Ragdoll::set_kinematic(bool state)
+{
+    for (int i = 0; i < m_rigid_bodies.size(); i++)
+    {
+        if (m_rigid_bodies[i])
+        {
+            m_rigid_bodies[i]->setRigidBodyFlag(PxRigidBodyFlag::eKINEMATIC, state);
+
+            if (!state)
+                m_rigid_bodies[i]->wakeUp();
+        }
+    }
+}
+
+glm::vec3 pos_from_transform(glm::mat4 m)
+{
     return glm::vec3(m[3][0], m[3][1], m[3][2]);
 }
 
@@ -45,7 +60,7 @@ PoseTransforms* AnimRagdoll::apply(Ragdoll* ragdoll, glm::mat4 model)
             glm::mat4 global_transform = to_mat4(body->getGlobalPose());
             glm::vec4 global_joint_pos = global_transform * glm::vec4(ragdoll->m_relative_joint_pos[i], 1.0f);
 
-            glm::quat body_rot      = glm::quat_cast(global_transform);
+            glm::quat body_rot = glm::quat_cast(global_transform);
             glm::quat diff_rot = body_rot * glm::conjugate(ragdoll->m_original_body_rotations[i]);
 
             glm::mat4 translation = glm::mat4(1.0f);
