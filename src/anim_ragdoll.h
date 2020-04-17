@@ -98,7 +98,7 @@ class AnimRagdoll
 public:
     AnimRagdoll(Skeleton* skeleton);
     ~AnimRagdoll();
-    PoseTransforms* apply(Ragdoll* ragdoll, glm::mat4 model);
+    PoseTransforms* apply(Ragdoll* ragdoll, glm::mat4 model_scale, glm::mat4 model_rotation);
 
 private:
     Skeleton*      m_skeleton;
