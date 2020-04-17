@@ -435,7 +435,8 @@ private:
             if (m_ragdoll.m_rigid_bodies[i])
             {
                 // Rigid body position relative to the joint
-                p = joints[i].inverse_bind_pose * glm::vec4(to_vec3(m_ragdoll.m_rigid_bodies[i]->getGlobalPose().p), 1.0f);
+                glm::mat4 m = glm::inverse(m_model * glm::inverse(joints[i].inverse_bind_pose));
+                p = m * glm::vec4(to_vec3(m_ragdoll.m_rigid_bodies[i]->getGlobalPose().p), 1.0f);
 
                 m_ragdoll.m_body_pos_relative_to_joint[i] = glm::vec3(p.x, p.y, p.z);
                 m_ragdoll.m_original_joint_rotations[i]   = glm::quat_cast(bind_pose);
@@ -969,7 +970,7 @@ private:
                 if (m_ragdoll.m_rigid_bodies[i])
                 {
                     // World position of the rigid body
-                    glm::vec4 temp      = global_transforms->transforms[i] * glm::vec4(m_ragdoll.m_body_pos_relative_to_joint[i], 1.0f);
+                    glm::vec4 temp      = m_model * global_transforms->transforms[i] * glm::vec4(m_ragdoll.m_body_pos_relative_to_joint[i], 1.0f);
                     glm::vec3 world_pos = glm::vec3(temp.x, temp.y, temp.z);
 
                     // Find the difference between the current and original joint rotation.
@@ -1010,7 +1011,7 @@ private:
 
         for (int i = 0; i < skeleton->num_bones(); i++)
         {
-            glm::mat4 mat = glm::inverse(m_model) * m_model * transforms->transforms[i];
+            glm::mat4 mat = m_model * transforms->transforms[i];
 
             m_joint_pos.push_back(glm::vec3(mat[3][0], mat[3][1], mat[3][2]));
 
@@ -1207,9 +1208,9 @@ private:
     glm::mat4                      m_model;
     glm::mat4                      m_model_without_scale = glm::mat4(1.0f);
     glm::mat4                      m_model_only_scale    = glm::mat4(1.0f);
-    float                          m_scale               = 1.0f;
+    float                          m_scale               = 0.1f;
     float                          m_ui_scale            = m_scale;
-    float                          m_mass                = 0.0001f;
+    float                          m_mass                = 1.0f;
 
     // Mesh
     std::unique_ptr<SkeletalMesh>
@@ -1221,7 +1222,7 @@ private:
     float m_heading_speed      = 0.0f;
     float m_sideways_speed     = 0.0f;
     float m_camera_sensitivity = 0.05f;
-    float m_camera_speed       = 1.1f;
+    float m_camera_speed       = 0.1f;
 
     // GUI
     bool m_visualize_mesh   = true;
